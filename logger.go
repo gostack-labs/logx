@@ -26,7 +26,7 @@ func (l LogLevel) String() string {
 	case LEVEL_ERROR:
 		return "ERROR"
 	default:
-		return ""
+		return "INFO"
 	}
 }
 
@@ -40,8 +40,6 @@ func ParseLogLevel(s string) LogLevel {
 		return LEVEL_WARN
 	case "ERROR":
 		return LEVEL_ERROR
-	case "OFF":
-		return LEVEL_OFF
 	}
 	return LEVEL_INFO
 }
