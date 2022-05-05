@@ -15,11 +15,16 @@ type logger struct {
 }
 
 type options struct {
-	Level      LogLevel //DEBUG,INFO,WARN,ERROR
-	Filename   string
-	MaxSize    int // MB
-	MaxAge     int // max days
-	MaxBackups int // max files
+	Level    LogLevel
+	fileOpts *LogFileOptions
+}
+
+type LogFileOptions struct {
+	Filename     string
+	MaxSize      int // MB
+	MaxAge       int // max days
+	MaxBackups   int // max files
+	IsJSONFormat bool
 }
 
 type Option func(o *options)
@@ -35,21 +40,9 @@ func WithLevel(l LogLevel) Option {
 //maxSize is the maximum size in megabytes of the log file before it gets rotated. It defaults to 100 megabytes.
 //maxAge is the maximum number of days to retain old log files based on the timestamp encoded in their filename. Note that a day is defined as 24 hours and may not exactly correspond to calendar days due to daylight savings, leap seconds, etc. The default is not to remove old log files based on age.
 //maxBackups is the maximum number of old log files to retain. The default is to retain all old log files (though MaxAge may still cause them to get deleted.)
-func WithFile(filename string, maxSize, maxAge, maxBackups int) Option {
+func WithFile(opt LogFileOptions) Option {
 	return func(o *options) {
-		if maxSize <= 0 {
-			maxSize = 100
-		}
-		if maxAge <= 0 {
-			maxAge = 0
-		}
-		if maxBackups <= 0 {
-			maxBackups = 0
-		}
-		o.Filename = filename
-		o.MaxSize = maxSize
-		o.MaxAge = maxAge
-		o.MaxBackups = maxBackups
+		o.fileOpts = &opt
 	}
 }
 
@@ -65,22 +58,26 @@ func NewLogger(opts ...Option) Logger {
 	}
 	var writer zapcore.WriteSyncer
 	var cores []zapcore.Core
-	var encoderConfig zapcore.EncoderConfig
 	//console
 	{
 		writer := zapcore.Lock(os.Stdout)
-		encoderConfig = zap.NewProductionEncoderConfig()
+		encoderConfig := zap.NewProductionEncoderConfig()
 		encoderConfig.EncodeTime = encodeTime
 		core := zapcore.NewCore(zapcore.NewConsoleEncoder(encoderConfig), writer, zapcore.Level(opt.Level))
 		cores = append(cores, core)
 	}
 	//file
-	if len(opt.Filename) > 0 {
-		writer = zapcore.AddSync(lumberjackLogger(opt))
+	if opt.fileOpts != nil && len(opt.fileOpts.Filename) > 0 {
+		writer = zapcore.AddSync(lumberjackLogger(opt.fileOpts))
 		encoderConfig := zap.NewProductionEncoderConfig()
-		// zapcore.NewJSONEncoder(encoderConfig)
 		encoderConfig.EncodeTime = encodeTime
-		core := zapcore.NewCore(zapcore.NewConsoleEncoder(encoderConfig), writer, zapcore.Level(opt.Level))
+		var encoder zapcore.Encoder
+		if opt.fileOpts.IsJSONFormat {
+			encoder = zapcore.NewJSONEncoder(encoderConfig)
+		} else {
+			encoder = zapcore.NewJSONEncoder(encoderConfig)
+		}
+		core := zapcore.NewCore(encoder, writer, zapcore.Level(opt.Level))
 		cores = append(cores, core)
 	}
 
@@ -93,7 +90,7 @@ func NewLogger(opts ...Option) Logger {
 	}
 }
 
-func lumberjackLogger(opt *options) *lumberjack.Logger {
+func lumberjackLogger(opt *LogFileOptions) *lumberjack.Logger {
 	return &lumberjack.Logger{
 		Filename:   opt.Filename,
 		MaxSize:    opt.MaxSize,
